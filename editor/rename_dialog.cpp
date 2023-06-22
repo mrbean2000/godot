@@ -599,6 +599,10 @@ void RenameDialog::rename() {
 				ERR_PRINT("Skipping missing node: " + to_rename[i].first.get_concatenated_subnames());
 				continue;
 			}
+			else if (new_name.is_empty()){
+				ERR_PRINT("Skipping node with missing name.");
+				continue;
+			}
 
 			scene_tree_editor->emit_signal(SNAME("node_prerename"), n, new_name);
 			undo_redo->add_do_method(scene_tree_editor, "_rename_node", n->get_instance_id(), new_name);
