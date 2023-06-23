@@ -598,8 +598,7 @@ void RenameDialog::rename() {
 			if (!n) {
 				ERR_PRINT("Skipping missing node: " + to_rename[i].first.get_concatenated_subnames());
 				continue;
-			}
-			else if (new_name.is_empty()){
+			} else if (new_name.is_empty()) {
 				ERR_PRINT("Skipping node with missing name.");
 				continue;
 			}
