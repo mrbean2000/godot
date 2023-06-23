@@ -30,11 +30,11 @@
 
 #include "godot_navigation_server.h"
 
-#include "core/os/mutex.h"
-
 #ifndef _3D_DISABLED
 #include "navigation_mesh_generator.h"
 #endif
+
+#include "core/os/mutex.h"
 
 using namespace NavigationUtilities;
 
@@ -262,7 +262,7 @@ TypedArray<RID> GodotNavigationServer::map_get_links(RID p_map) const {
 	const NavMap *map = map_owner.get_or_null(p_map);
 	ERR_FAIL_COND_V(map == nullptr, link_rids);
 
-	const LocalVector<NavLink *> links = map->get_links();
+	const LocalVector<NavLink *> &links = map->get_links();
 	link_rids.resize(links.size());
 
 	for (uint32_t i = 0; i < links.size(); i++) {
@@ -276,7 +276,7 @@ TypedArray<RID> GodotNavigationServer::map_get_regions(RID p_map) const {
 	const NavMap *map = map_owner.get_or_null(p_map);
 	ERR_FAIL_COND_V(map == nullptr, regions_rids);
 
-	const LocalVector<NavRegion *> regions = map->get_regions();
+	const LocalVector<NavRegion *> &regions = map->get_regions();
 	regions_rids.resize(regions.size());
 
 	for (uint32_t i = 0; i < regions.size(); i++) {
@@ -290,7 +290,7 @@ TypedArray<RID> GodotNavigationServer::map_get_agents(RID p_map) const {
 	const NavMap *map = map_owner.get_or_null(p_map);
 	ERR_FAIL_COND_V(map == nullptr, agents_rids);
 
-	const LocalVector<NavAgent *> agents = map->get_agents();
+	const LocalVector<NavAgent *> &agents = map->get_agents();
 	agents_rids.resize(agents.size());
 
 	for (uint32_t i = 0; i < agents.size(); i++) {
@@ -465,7 +465,10 @@ void GodotNavigationServer::region_bake_navigation_mesh(Ref<NavigationMesh> p_na
 
 #ifndef _3D_DISABLED
 	NavigationMeshGenerator::get_singleton()->clear(p_navigation_mesh);
-	NavigationMeshGenerator::get_singleton()->bake(p_navigation_mesh, p_root_node);
+	Ref<NavigationMeshSourceGeometryData3D> source_geometry_data;
+	source_geometry_data.instantiate();
+	NavigationMeshGenerator::get_singleton()->parse_source_geometry_data(p_navigation_mesh, source_geometry_data, p_root_node);
+	NavigationMeshGenerator::get_singleton()->bake_from_source_geometry_data(p_navigation_mesh, source_geometry_data);
 #endif
 }
 
@@ -693,6 +696,20 @@ COMMAND_2(agent_set_map, RID, p_agent, RID, p_map) {
 	}
 }
 
+COMMAND_2(agent_set_paused, RID, p_agent, bool, p_paused) {
+	NavAgent *agent = agent_owner.get_or_null(p_agent);
+	ERR_FAIL_COND(agent == nullptr);
+
+	agent->set_paused(p_paused);
+}
+
+bool GodotNavigationServer::agent_get_paused(RID p_agent) const {
+	NavAgent *agent = agent_owner.get_or_null(p_agent);
+	ERR_FAIL_COND_V(agent == nullptr, false);
+
+	return agent->get_paused();
+}
+
 COMMAND_2(agent_set_neighbor_distance, RID, p_agent, real_t, p_distance) {
 	NavAgent *agent = agent_owner.get_or_null(p_agent);
 	ERR_FAIL_COND(agent == nullptr);
@@ -886,6 +903,20 @@ RID GodotNavigationServer::obstacle_get_map(RID p_obstacle) const {
 	return RID();
 }
 
+COMMAND_2(obstacle_set_paused, RID, p_obstacle, bool, p_paused) {
+	NavObstacle *obstacle = obstacle_owner.get_or_null(p_obstacle);
+	ERR_FAIL_COND(obstacle == nullptr);
+
+	obstacle->set_paused(p_paused);
+}
+
+bool GodotNavigationServer::obstacle_get_paused(RID p_obstacle) const {
+	NavObstacle *obstacle = obstacle_owner.get_or_null(p_obstacle);
+	ERR_FAIL_COND_V(obstacle == nullptr, false);
+
+	return obstacle->get_paused();
+}
+
 COMMAND_2(obstacle_set_radius, RID, p_obstacle, real_t, p_radius) {
 	ERR_FAIL_COND_MSG(p_radius < 0.0, "Radius must be positive.");
 	NavObstacle *obstacle = obstacle_owner.get_or_null(p_obstacle);
@@ -925,6 +956,18 @@ COMMAND_2(obstacle_set_avoidance_layers, RID, p_obstacle, uint32_t, p_layers) {
 	obstacle->set_avoidance_layers(p_layers);
 }
 
+void GodotNavigationServer::parse_source_geometry_data(const Ref<NavigationMesh> &p_navigation_mesh, Ref<NavigationMeshSourceGeometryData3D> p_source_geometry_data, Node *p_root_node, const Callable &p_callback) {
+#ifndef _3D_DISABLED
+	NavigationMeshGenerator::get_singleton()->parse_source_geometry_data(p_navigation_mesh, p_source_geometry_data, p_root_node, p_callback);
+#endif
+}
+
+void GodotNavigationServer::bake_from_source_geometry_data(Ref<NavigationMesh> p_navigation_mesh, const Ref<NavigationMeshSourceGeometryData3D> &p_source_geometry_data, const Callable &p_callback) {
+#ifndef _3D_DISABLED
+	NavigationMeshGenerator::get_singleton()->bake_from_source_geometry_data(p_navigation_mesh, p_source_geometry_data, p_callback);
+#endif
+}
+
 COMMAND_1(free, RID, p_object) {
 	if (map_owner.owns(p_object)) {
 		NavMap *map = map_owner.get_or_null(p_object);
@@ -954,8 +997,10 @@ COMMAND_1(free, RID, p_object) {
 		}
 
 		int map_index = active_maps.find(map);
-		active_maps.remove_at(map_index);
-		active_maps_update_id.remove_at(map_index);
+		if (map_index >= 0) {
+			active_maps.remove_at(map_index);
+			active_maps_update_id.remove_at(map_index);
+		}
 		map_owner.free(p_object);
 
 	} else if (region_owner.owns(p_object)) {
